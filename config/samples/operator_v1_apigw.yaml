@@ -1,0 +1,12 @@
+apiVersion: operator.digitalhub.it/v1
+kind: ApiGw
+metadata:
+  name: apigw-sample
+  #namespace: apigw-operator-system
+spec:
+  hosts:
+  - host: foo.bar.com
+    paths:
+    - path: /bar
+      service: service1
+      port: 80
