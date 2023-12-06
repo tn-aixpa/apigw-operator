@@ -32,15 +32,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/foomo/htpasswd"
 	operatorv1 "github.com/scc-digitalhub/apigw-operator/api/v1"
 )
+
+const genericStatusUpdateFailedMessage = "failed to update ApiGw status"
 
 // Definitions to manage status conditions
 const (
 	// Launch deployment and service
 	typeDeploying = "Deploying"
 
-	typeRunning = "Running" //TODO cambiare in ready perché non ci sono operazioni da controllare
+	typeReady = "Ready"
 
 	typeError = "Error"
 
@@ -91,7 +94,7 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		log.Info("State unspecified, updating to deploying")
 		apigw.Status.State = typeDeploying
 		if err = r.Status().Update(ctx, apigw); err != nil {
-			log.Error(err, "failed to update ApiGw status")
+			log.Error(err, genericStatusUpdateFailedMessage)
 			return ctrl.Result{}, err
 		}
 
@@ -102,7 +105,35 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		log.Info("Deploying")
 
 		// Get or create secret
-		//TODO
+		if apigw.Spec.Auth.Type != "" && apigw.Spec.Auth.Type != "none" {
+			existingSecret := &corev1.Secret{}
+			err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(apigw.Name), Namespace: apigw.Namespace}, existingSecret)
+			if err != nil && apierrors.IsNotFound(err) {
+				// Create secret
+				secret, err := r.secretForApiGw(apigw, ctx)
+				if err != nil {
+					log.Error(err, "Failed to define new Secret resource for ApiGw")
+
+					apigw.Status.State = typeError
+
+					if err := r.Status().Update(ctx, apigw); err != nil {
+						log.Error(err, genericStatusUpdateFailedMessage)
+						return ctrl.Result{}, err
+					}
+
+					return ctrl.Result{}, err
+				}
+				log.Info("Creating a new Secret", "Secret.Namespace", secret.Namespace, "Secret.Name", secret.Name)
+				if err = r.Create(ctx, secret); err != nil {
+					log.Error(err, "Failed to create new Secret", "Secret.Namespace", secret.Namespace, "Secret.Name", secret.Name)
+					return ctrl.Result{}, err
+				}
+			} else if err != nil {
+				log.Error(err, "Failed to get secret")
+				// Return error for reconciliation to be re-trigged
+				return ctrl.Result{}, err
+			}
+		}
 
 		// Get or create ingress
 		existingIngress := &networkingv1.Ingress{}
@@ -116,7 +147,7 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 				apigw.Status.State = typeError
 
 				if err := r.Status().Update(ctx, apigw); err != nil {
-					log.Error(err, "failed to update ApiGw status")
+					log.Error(err, genericStatusUpdateFailedMessage)
 					return ctrl.Result{}, err
 				}
 
@@ -133,9 +164,9 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 
-		apigw.Status.State = typeRunning
+		apigw.Status.State = typeReady
 		if err = r.Status().Update(ctx, apigw); err != nil {
-			log.Error(err, "failed to update ApiGw status")
+			log.Error(err, genericStatusUpdateFailedMessage)
 			return ctrl.Result{}, err
 		}
 
@@ -144,57 +175,97 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	}
 
-	if apigw.Status.State == typeRunning {
-		//TODO controllare solo se bisogna passare in updating
+	if apigw.Status.State == typeReady {
+		ingress := &networkingv1.Ingress{}
+		err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(apigw.Name), Namespace: apigw.Namespace}, ingress)
+		if err != nil {
+			log.Error(err, "Failed to get ingress")
+			return ctrl.Result{}, err
+		}
+
+		updated := crUpdated(ingress, apigw)
+
+		if updated {
+			apigw.Status.State = typeReady
+			if err = r.Status().Update(ctx, apigw); err != nil {
+				log.Error(err, genericStatusUpdateFailedMessage)
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
 	if apigw.Status.State == typeUpdating {
-		//TODO
+		// TODO quando la Cr viene modificata non serve cancellare l'ingress ma solo aggiornarlo
 	}
 
 	if apigw.Status.State == typeError {
-		//TODO
+		// Delete ingress
+		ingress := &networkingv1.Ingress{}
+		err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(apigw.Name), Namespace: apigw.Namespace}, ingress)
+		if err == nil {
+			if err := r.Delete(ctx, ingress); err != nil {
+				log.Error(err, "Failed to clean up ingress")
+			}
+		} else if err != nil && !apierrors.IsNotFound(err) {
+			log.Error(err, "Failed to get ingress")
+			return ctrl.Result{}, err
+		}
+
+		// TODO delete secret
 	}
 
 	return ctrl.Result{}, nil
 }
 
-func crUpdated(dep *networkingv1.Ingress, cr *operatorv1.ApiGw) bool {
+func crUpdated(ingress *networkingv1.Ingress, cr *operatorv1.ApiGw) bool {
+	rule := ingress.Spec.Rules[0]
+	path := rule.IngressRuleValue.HTTP.Paths[0]
+	service := path.Backend.Service
+	if rule.Host != cr.Spec.Host || path.Path != cr.Spec.Path || service.Name != cr.Spec.Service || service.Port.Number != cr.Spec.Port {
+		return true
+	}
+
+	// TODO check credentials
+
 	return false
 }
 
 // deploymentForDremiorestserver returns a DremioRestServer Deployment object
-//TODO usare per ingress stesso namespace della CR, cercare servizi nel namespace della CR
-//TODO quando la Cr viene modificata non serve cancellare l'ingress ma solo aggiornarlo
 func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1.ApiGw) (*networkingv1.Ingress, error) {
 	// check if services exist
 	service := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{Name: apigw.Spec.Hosts[0].Paths[0].Service, Namespace: apigw.Namespace}, service)
+	err := r.Get(ctx, types.NamespacedName{Name: apigw.Spec.Service, Namespace: apigw.Namespace}, service)
 	if err != nil && apierrors.IsNotFound(err) {
 		return nil, fmt.Errorf("CR spec contains a non-existing service")
 	}
 
 	pathTypePrefix := networkingv1.PathTypePrefix
+	nginx := "nginx"
 
 	ingress := &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      formatResourceName(apigw.Name),
 			Namespace: apigw.Namespace,
 			Labels:    labelsForApiGw(apigw.Name),
+			Annotations: map[string]string{
+				"nginx.ingress.kubernetes.io/auth-type":   apigw.Spec.Auth.Type,
+				"nginx.ingress.kubernetes.io/auth-secret": formatResourceName(apigw.Name),
+			},
 		},
 		Spec: networkingv1.IngressSpec{
+			IngressClassName: &nginx,
 			Rules: []networkingv1.IngressRule{{
-				Host: apigw.Spec.Hosts[0].Host,
+				Host: apigw.Spec.Host,
 				IngressRuleValue: networkingv1.IngressRuleValue{
 					HTTP: &networkingv1.HTTPIngressRuleValue{
 						Paths: []networkingv1.HTTPIngressPath{{
 							PathType: &pathTypePrefix,
-							Path: apigw.Spec.Hosts[0].Paths[0].Path,
+							Path:     apigw.Spec.Path,
 							Backend: networkingv1.IngressBackend{
 								Service: &networkingv1.IngressServiceBackend{
-									Name: apigw.Spec.Hosts[0].Paths[0].Service,
+									Name: apigw.Spec.Service,
 									Port: networkingv1.ServiceBackendPort{
-										Number: int32(apigw.Spec.Hosts[0].Paths[0].Port),
+										Number: int32(apigw.Spec.Port),
 									},
 								},
 							},
@@ -213,15 +284,34 @@ func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1
 	return ingress, nil
 }
 
-//TODO mettere nel secret le credenziali, già encoded con libreria come le vuole nginx
-func (r *ApiGwReconciler) secretForApiGw(apigw *operatorv1.ApiGw) (*corev1.Secret, error) {
+func (r *ApiGwReconciler) secretForApiGw(apigw *operatorv1.ApiGw, ctx context.Context) (*corev1.Secret, error) {
+	log := log.FromContext(ctx)
+
+	file := "/tmp/auth.htpasswd"
+	name := apigw.Spec.Auth.Basic.User
+	password := apigw.Spec.Auth.Basic.Password
+	err := htpasswd.SetPassword(file, name, password, htpasswd.HashBCrypt)
+	if err != nil {
+		log.Info("Error while setting password", "err", err)
+		return nil, err
+	}
+
+	passwords, err := htpasswd.ParseHtpasswdFile(file)
+	if err != nil {
+		log.Info("Error while reading encrypted password", "err", err)
+		return nil, err
+	}
+	log.Info("Passwords contains", "passwords", passwords)
+
+	authString := name + ":" + passwords[name]
+
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      formatResourceName(apigw.Name),
 			Namespace: apigw.Namespace,
 			//Labels:    labelsForApiGw(apigw.Name, tag), //TODO
 		},
-		StringData: map[string]string{"": ""}, //TODO
+		StringData: map[string]string{"auth": authString},
 	}
 
 	if err := ctrl.SetControllerReference(apigw, secret, r.Scheme); err != nil {
@@ -233,7 +323,7 @@ func (r *ApiGwReconciler) secretForApiGw(apigw *operatorv1.ApiGw) (*corev1.Secre
 
 // labelsForApiGw returns the labels for selecting the resources
 // More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
-func labelsForApiGw(name string/*, version string*/) map[string]string {
+func labelsForApiGw(name string /*, version string*/) map[string]string {
 	selectors := selectorsForApiGw(name)
 	//selectors["app.kubernetes.io/version"] = version
 	selectors["app.kubernetes.io/part-of"] = "apigw"

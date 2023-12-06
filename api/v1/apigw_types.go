@@ -23,22 +23,24 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-//TODO, togliere array sezione opzionale auth basic con username e password (da struct)
-
 // ApiGwSpec defines the desired state of ApiGw
 type ApiGwSpec struct {
-	Hosts []Host `json:"hosts,omitempty"`
-}
-
-type Host struct {
-	Host  string `json:"host,omitempty"`
-	Paths []Path `json:"paths,omitempty"`
-}
-
-type Path struct {
-	Path string `json:"path,omitempty"`
+	Host    string `json:"host,omitempty"`
+	Path    string `json:"path,omitempty"`
 	Service string `json:"service,omitempty"`
-	Port int `json:"port,omitempty"`
+	Port    int32  `json:"port,omitempty"`
+	Auth    Auth   `json:"auth,omitempty"`
+}
+
+type Auth struct {
+	// Valid types: none, basic
+	Type  string    `json:"type,omitempty"`
+	Basic BasicAuth `json:"basic,omitempty"`
+}
+
+type BasicAuth struct {
+	User     string `json:"user,omitempty"`
+	Password string `json:"password,omitempty"`
 }
 
 // ApiGwStatus defines the observed state of ApiGw
