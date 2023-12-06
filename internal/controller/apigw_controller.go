@@ -40,7 +40,7 @@ const (
 	// Launch deployment and service
 	typeDeploying = "Deploying"
 
-	typeRunning = "Running"
+	typeRunning = "Running" //TODO cambiare in ready perché non ci sono operazioni da controllare
 
 	typeError = "Error"
 
@@ -145,7 +145,7 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	if apigw.Status.State == typeRunning {
-		//TODO
+		//TODO controllare solo se bisogna passare in updating
 	}
 
 	if apigw.Status.State == typeUpdating {
@@ -164,6 +164,8 @@ func crUpdated(dep *networkingv1.Ingress, cr *operatorv1.ApiGw) bool {
 }
 
 // deploymentForDremiorestserver returns a DremioRestServer Deployment object
+//TODO usare per ingress stesso namespace della CR, cercare servizi nel namespace della CR
+//TODO quando la Cr viene modificata non serve cancellare l'ingress ma solo aggiornarlo
 func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1.ApiGw) (*networkingv1.Ingress, error) {
 	// check if services exist
 	service := &corev1.Service{}
@@ -192,7 +194,6 @@ func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1
 								Service: &networkingv1.IngressServiceBackend{
 									Name: apigw.Spec.Hosts[0].Paths[0].Service,
 									Port: networkingv1.ServiceBackendPort{
-										//TODO check whether number or name, see https://pkg.go.dev/k8s.io/api@v0.28.4/networking/v1#ServiceBackendPort
 										Number: int32(apigw.Spec.Hosts[0].Paths[0].Port),
 									},
 								},
@@ -212,6 +213,7 @@ func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1
 	return ingress, nil
 }
 
+//TODO mettere nel secret le credenziali, già encoded con libreria come le vuole nginx
 func (r *ApiGwReconciler) secretForApiGw(apigw *operatorv1.ApiGw) (*corev1.Secret, error) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

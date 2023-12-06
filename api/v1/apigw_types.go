@@ -23,6 +23,8 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+//TODO, togliere array sezione opzionale auth basic con username e password (da struct)
+
 // ApiGwSpec defines the desired state of ApiGw
 type ApiGwSpec struct {
 	Hosts []Host `json:"hosts,omitempty"`
