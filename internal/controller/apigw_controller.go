@@ -183,10 +183,17 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 
-		updated := crUpdated(ingress, apigw)
+		secret := &corev1.Secret{}
+		err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(apigw.Name), Namespace: apigw.Namespace}, secret)
+		if err != nil {
+			log.Error(err, "Failed to get secret")
+			return ctrl.Result{}, err
+		}
+
+		updated := crUpdated(ingress, secret, apigw)
 
 		if updated {
-			apigw.Status.State = typeReady
+			apigw.Status.State = typeUpdating
 			if err = r.Status().Update(ctx, apigw); err != nil {
 				log.Error(err, genericStatusUpdateFailedMessage)
 				return ctrl.Result{}, err
@@ -195,7 +202,46 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	if apigw.Status.State == typeUpdating {
-		// TODO quando la Cr viene modificata non serve cancellare l'ingress ma solo aggiornarlo
+		// TODO check which one changed (ingress or auth) and only update that one?
+		ingress := &networkingv1.Ingress{}
+		err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(apigw.Name), Namespace: apigw.Namespace}, ingress)
+		if err != nil {
+			log.Error(err, "Failed to get ingress")
+			return ctrl.Result{}, err
+		}
+
+		// Update ingress
+		rule := ingress.Spec.Rules[0]
+		path := rule.HTTP.Paths[0]
+
+		rule.Host = apigw.Spec.Host
+		path.Path = apigw.Spec.Path
+		path.Backend.Service.Name = apigw.Spec.Service
+		path.Backend.Service.Port.Number = apigw.Spec.Port
+
+		if err = r.Update(ctx, ingress); err != nil {
+			log.Error(err, "Failed to update ingress")
+			return ctrl.Result{}, err
+		}
+
+		// Delete secret
+		secret := &corev1.Secret{}
+		err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(apigw.Name), Namespace: apigw.Namespace}, secret)
+		if err == nil {
+			if err := r.Delete(ctx, secret); err != nil {
+				log.Error(err, "Failed to clean up secret")
+			}
+		} else if err != nil && !apierrors.IsNotFound(err) {
+			log.Error(err, "Failed to get secret")
+			return ctrl.Result{}, err
+		}
+
+		// Update status
+		apigw.Status.State = typeDeploying
+		if err := r.Status().Update(ctx, apigw); err != nil {
+			log.Error(err, genericStatusUpdateFailedMessage)
+			return ctrl.Result{}, err
+		}
 	}
 
 	if apigw.Status.State == typeError {
@@ -211,13 +257,23 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 
-		// TODO delete secret
+		// Delete secret
+		secret := &corev1.Secret{}
+		err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(apigw.Name), Namespace: apigw.Namespace}, secret)
+		if err == nil {
+			if err := r.Delete(ctx, secret); err != nil {
+				log.Error(err, "Failed to clean up secret")
+			}
+		} else if err != nil && !apierrors.IsNotFound(err) {
+			log.Error(err, "Failed to get secret")
+			return ctrl.Result{}, err
+		}
 	}
 
 	return ctrl.Result{}, nil
 }
 
-func crUpdated(ingress *networkingv1.Ingress, cr *operatorv1.ApiGw) bool {
+func crUpdated(ingress *networkingv1.Ingress, secret *corev1.Secret, cr *operatorv1.ApiGw) bool {
 	rule := ingress.Spec.Rules[0]
 	path := rule.IngressRuleValue.HTTP.Paths[0]
 	service := path.Backend.Service
@@ -225,13 +281,25 @@ func crUpdated(ingress *networkingv1.Ingress, cr *operatorv1.ApiGw) bool {
 		return true
 	}
 
-	// TODO check credentials
+	if ingress.Annotations["nginx.ingress.kubernetes.io/auth-type"] != cr.Spec.Auth.Type {
+		return true
+	}
+	authString := string(secret.Data["auth"])
+	if strings.Split(authString, ":")[0] != cr.Spec.Auth.Basic.User {
+		return true
+	}
+
+	// TODO what to do if password is different? Encrypting with htpasswd is different every time
 
 	return false
 }
 
 // deploymentForDremiorestserver returns a DremioRestServer Deployment object
 func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1.ApiGw) (*networkingv1.Ingress, error) {
+	if apigw.Spec.Host == "" || apigw.Spec.Path == "" || apigw.Spec.Service == "" || apigw.Spec.Port == 0 {
+		return nil, fmt.Errorf("host, path, service, port are required")
+	}
+
 	// check if services exist
 	service := &corev1.Service{}
 	err := r.Get(ctx, types.NamespacedName{Name: apigw.Spec.Service, Namespace: apigw.Namespace}, service)
