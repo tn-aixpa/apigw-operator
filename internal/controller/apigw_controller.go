@@ -20,8 +20,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
+	"golang.org/x/crypto/bcrypt"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/foomo/htpasswd"
 	operatorv1 "github.com/scc-digitalhub/apigw-operator/api/v1"
 )
 
@@ -41,7 +40,7 @@ const genericStatusUpdateFailedMessage = "failed to update ApiGw status"
 // Definitions to manage status conditions
 const (
 	// Launch deployment and service
-	typeDeploying = "Deploying"
+	typeInitializing = "Initializing"
 
 	typeReady = "Ready"
 
@@ -62,8 +61,8 @@ func formatResourceName(resourceName string) string {
 
 //+kubebuilder:rbac:groups=operator.digitalhub.it,resources=apigws,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=operator.digitalhub.it,resources=apigws/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=networking,namespace=dremions,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,namespace=dremions,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking,namespace=apigw-operator-system,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,namespace=apigw-operator-system,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -91,8 +90,8 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	// If status is unknown, set Deploying
 	if apigw.Status.State == "" {
-		log.Info("State unspecified, updating to deploying")
-		apigw.Status.State = typeDeploying
+		log.Info("State unspecified, updating to initializing")
+		apigw.Status.State = typeInitializing
 		if err = r.Status().Update(ctx, apigw); err != nil {
 			log.Error(err, genericStatusUpdateFailedMessage)
 			return ctrl.Result{}, err
@@ -101,8 +100,8 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	if apigw.Status.State == typeDeploying {
-		log.Info("Deploying")
+	if apigw.Status.State == typeInitializing {
+		log.Info("Initializing")
 
 		// Get or create secret
 		if apigw.Spec.Auth.Type != "" && apigw.Spec.Auth.Type != "none" {
@@ -129,8 +128,18 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 					return ctrl.Result{}, err
 				}
 			} else if err != nil {
-				log.Error(err, "Failed to get secret")
-				// Return error for reconciliation to be re-trigged
+				log.Error(err, "Failed to check if secret already exists")
+				return ctrl.Result{}, err
+			} else {
+				log.Error(err, "Secret already exists")
+
+				apigw.Status.State = typeError
+
+				if err := r.Status().Update(ctx, apigw); err != nil {
+					log.Error(err, genericStatusUpdateFailedMessage)
+					return ctrl.Result{}, err
+				}
+
 				return ctrl.Result{}, err
 			}
 		}
@@ -159,8 +168,19 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 				return ctrl.Result{}, err
 			}
 		} else if err != nil {
-			log.Error(err, "Failed to get ingress")
+			log.Error(err, "Failed to check if ingress already exists")
 			// Return error for reconciliation to be re-trigged
+			return ctrl.Result{}, err
+		} else {
+			log.Error(err, "Ingress already exists")
+
+			apigw.Status.State = typeError
+
+			if err := r.Status().Update(ctx, apigw); err != nil {
+				log.Error(err, genericStatusUpdateFailedMessage)
+				return ctrl.Result{}, err
+			}
+
 			return ctrl.Result{}, err
 		}
 
@@ -171,38 +191,50 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		}
 
 		log.Info("Ingress created successfully")
-		// Ingress created successfully
-		return ctrl.Result{RequeueAfter: time.Minute}, nil
+		return ctrl.Result{}, nil
 	}
 
 	if apigw.Status.State == typeReady {
-		ingress := &networkingv1.Ingress{}
-		err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(apigw.Name), Namespace: apigw.Namespace}, ingress)
-		if err != nil {
-			log.Error(err, "Failed to get ingress")
-			return ctrl.Result{}, err
-		}
+		log.Info("Ready")
 
-		secret := &corev1.Secret{}
-		err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(apigw.Name), Namespace: apigw.Namespace}, secret)
-		if err != nil {
-			log.Error(err, "Failed to get secret")
-			return ctrl.Result{}, err
-		}
+		return ctrl.Result{}, nil
 
-		updated := crUpdated(ingress, secret, apigw)
+		// TODO
+		// Currently, we are unable to detect if the CR's password has been updated, as it is stored
+		// as hash in the secret. Unfortunately, we cannot assume a reconcile trigger while in Ready
+		// state corresponds to an update, as the reconcile-loop is then triggered infinitely.
+		// This is due to it triggering not only when the CR's state is updated, but also when the
+		// state of an associated resource is updated, which happens when the ingress gets an address.
 
-		if updated {
+		/*
+			ingress := &networkingv1.Ingress{}
+			err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(apigw.Name), Namespace: apigw.Namespace}, ingress)
+
+			if err != nil && apierrors.IsNotFound(err) {
+				log.Error(err, "Ingress not found")
+
+				apigw.Status.State = typeError
+
+				if err := r.Status().Update(ctx, apigw); err != nil {
+					log.Error(err, genericStatusUpdateFailedMessage)
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{}, err
+			}
+
 			apigw.Status.State = typeUpdating
 			if err = r.Status().Update(ctx, apigw); err != nil {
 				log.Error(err, genericStatusUpdateFailedMessage)
 				return ctrl.Result{}, err
 			}
-		}
+
+			return ctrl.Result{}, nil
+		*/
 	}
 
 	if apigw.Status.State == typeUpdating {
-		// TODO check which one changed (ingress or auth) and only update that one?
+		log.Info("Updating")
+
 		ingress := &networkingv1.Ingress{}
 		err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(apigw.Name), Namespace: apigw.Namespace}, ingress)
 		if err != nil {
@@ -236,8 +268,30 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 
+		// Recreate secret if auth is set
+		if apigw.Spec.Auth.Type != "" && apigw.Spec.Auth.Type != "none" {
+			secret, err := r.secretForApiGw(apigw, ctx)
+			if err != nil {
+				log.Error(err, "Failed to define new Secret resource for ApiGw")
+
+				apigw.Status.State = typeError
+
+				if err := r.Status().Update(ctx, apigw); err != nil {
+					log.Error(err, genericStatusUpdateFailedMessage)
+					return ctrl.Result{}, err
+				}
+
+				return ctrl.Result{}, err
+			}
+			log.Info("Creating a new Secret", "Secret.Namespace", secret.Namespace, "Secret.Name", secret.Name)
+			if err = r.Create(ctx, secret); err != nil {
+				log.Error(err, "Failed to create new Secret", "Secret.Namespace", secret.Namespace, "Secret.Name", secret.Name)
+				return ctrl.Result{}, err
+			}
+		}
+
 		// Update status
-		apigw.Status.State = typeDeploying
+		apigw.Status.State = typeReady
 		if err := r.Status().Update(ctx, apigw); err != nil {
 			log.Error(err, genericStatusUpdateFailedMessage)
 			return ctrl.Result{}, err
@@ -273,6 +327,8 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	return ctrl.Result{}, nil
 }
 
+// TODO Method currently unused, as there is no way to check if the password was updated (it's stored as hash in the secret)
+/*
 func crUpdated(ingress *networkingv1.Ingress, secret *corev1.Secret, cr *operatorv1.ApiGw) bool {
 	rule := ingress.Spec.Rules[0]
 	path := rule.IngressRuleValue.HTTP.Paths[0]
@@ -289,12 +345,10 @@ func crUpdated(ingress *networkingv1.Ingress, secret *corev1.Secret, cr *operato
 		return true
 	}
 
-	// TODO what to do if password is different? Encrypting with htpasswd is different every time
-
 	return false
 }
+*/
 
-// deploymentForDremiorestserver returns a DremioRestServer Deployment object
 func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1.ApiGw) (*networkingv1.Ingress, error) {
 	if apigw.Spec.Host == "" || apigw.Spec.Path == "" || apigw.Spec.Service == "" || apigw.Spec.Port == 0 {
 		return nil, fmt.Errorf("host, path, service, port are required")
@@ -352,32 +406,35 @@ func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1
 	return ingress, nil
 }
 
-func (r *ApiGwReconciler) secretForApiGw(apigw *operatorv1.ApiGw, ctx context.Context) (*corev1.Secret, error) {
-	log := log.FromContext(ctx)
+func hashBcrypt(password string) (hash string, err error) {
+	passwordBytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return
+	}
+	return string(passwordBytes), nil
+}
 
-	file := "/tmp/auth.htpasswd"
+func (r *ApiGwReconciler) secretForApiGw(apigw *operatorv1.ApiGw, ctx context.Context) (*corev1.Secret, error) {
+	// log := log.FromContext(ctx)
+
 	name := apigw.Spec.Auth.Basic.User
 	password := apigw.Spec.Auth.Basic.Password
-	err := htpasswd.SetPassword(file, name, password, htpasswd.HashBCrypt)
+	if name == "" || password == "" {
+		return nil, fmt.Errorf("user and password are required")
+	}
+
+	hash, err := hashBcrypt(password)
 	if err != nil {
-		log.Info("Error while setting password", "err", err)
 		return nil, err
 	}
 
-	passwords, err := htpasswd.ParseHtpasswdFile(file)
-	if err != nil {
-		log.Info("Error while reading encrypted password", "err", err)
-		return nil, err
-	}
-	log.Info("Passwords contains", "passwords", passwords)
-
-	authString := name + ":" + passwords[name]
+	authString := name + ":" + hash
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      formatResourceName(apigw.Name),
 			Namespace: apigw.Namespace,
-			//Labels:    labelsForApiGw(apigw.Name, tag), //TODO
+			Labels:    labelsForApiGw(apigw.Name),
 		},
 		StringData: map[string]string{"auth": authString},
 	}
@@ -391,17 +448,12 @@ func (r *ApiGwReconciler) secretForApiGw(apigw *operatorv1.ApiGw, ctx context.Co
 
 // labelsForApiGw returns the labels for selecting the resources
 // More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
-func labelsForApiGw(name string /*, version string*/) map[string]string {
-	selectors := selectorsForApiGw(name)
-	//selectors["app.kubernetes.io/version"] = version
-	selectors["app.kubernetes.io/part-of"] = "apigw"
-	return selectors
-}
-
-func selectorsForApiGw(name string) map[string]string {
-	return map[string]string{"app.kubernetes.io/name": "ApiGw",
+func labelsForApiGw(name string) map[string]string {
+	return map[string]string{
+		"app.kubernetes.io/name":       "ApiGw",
 		"app.kubernetes.io/instance":   name,
 		"app.kubernetes.io/managed-by": "apigw-operator",
+		"app.kubernetes.io/part-of":    "apigw",
 	}
 }
 

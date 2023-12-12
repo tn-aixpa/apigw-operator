@@ -31,7 +31,7 @@ kind: Role
 metadata:
   creationTimestamp: null
   name: manager-role
-  namespace: dremions
+  namespace: apigw-operator-system
 rules:
 - apiGroups:
   - ""

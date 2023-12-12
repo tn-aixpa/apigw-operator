@@ -1,94 +1,55 @@
-# apigw-operator
-// TODO(user): Add simple overview of use/purpose
+# API Gateway Operator
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+A Kubernetes operator to launch ingresses for services.
 
-## Getting Started
-You’ll need a Kubernetes cluster to run against. You can use [KIND](https://sigs.k8s.io/kind) to get a local cluster for testing, or run against a remote cluster.
-**Note:** Your controller will automatically use the current context in your kubeconfig file (i.e. whatever cluster `kubectl cluster-info` shows).
-
-### Running on the cluster
-1. Install Instances of Custom Resources:
-
+## Installation
+There is an available deployment file ready to be used. Install operator and CRD:
 ```sh
-kubectl apply -f config/samples/
+kubectl apply -f deployment.yaml
 ```
 
-2. Build and push your image to the location specified by `IMG`:
-
+An example CR is found at `config/samples/operator_v1_apigw.yaml`. Apply it with:
 ```sh
-make docker-build docker-push IMG=<some-registry>/apigw-operator:tag
+kubectl apply -f config/samples/operator_v1_apigw.yaml
 ```
 
-3. Deploy the controller to the cluster with the image specified by `IMG`:
+## API Gateway custom resource
+The custom resource's properties are:
 
-```sh
-make deploy IMG=<some-registry>/apigw-operator:tag
+- `host`: **Required**. URL to host the access point on.
+- `path`: **Required**. Path within the host to host the access point on.
+- `service`: **Required**. Name of the Kubernetes service.
+- `port`: **Required**. Internal port the service is listening on.
+- `auth`: *Optional*. A structure to configure authentication. If left empty, authentication is disabled. Has the following properties:
+  - `type`: `basic` or `none` (disabled).
+  - `basic`: Structure for basic authentication. Has the following properties:
+    - `user`
+    - `password`
+
+A valid sample spec configuration is:
+``` yaml
+...
+spec:
+  host: foo.bar.com
+  path: /
+  service: myservice
+  port: 9080
+  auth:
+    type: basic
+    basic:
+      user: user
+      password: password
 ```
 
-### Uninstall CRDs
-To delete the CRDs from the cluster:
-
-```sh
-make uninstall
+Another valid sample:
+``` yaml
+...
+spec:
+  host: foo.bar.com
+  path: /
+  service: myservice
+  port: 9080
 ```
 
-### Undeploy controller
-UnDeploy the controller from the cluster:
-
-```sh
-make undeploy
-```
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-### How it works
-This project aims to follow the Kubernetes [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/).
-
-It uses [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/),
-which provide a reconcile function responsible for synchronizing resources until the desired state is reached on the cluster.
-
-### Test It Out
-1. Install the CRDs into the cluster:
-
-```sh
-make install
-```
-
-2. Run your controller (this will run in the foreground, so switch to a new terminal if you want to leave it running):
-
-```sh
-make run
-```
-
-**NOTE:** You can also run this in one step by running: `make install run`
-
-### Modifying the API definitions
-If you are editing the API definitions, generate the manifests such as CRs or CRDs using:
-
-```sh
-make manifests
-```
-
-**NOTE:** Run `make --help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
-
-## License
-
-Copyright 2023.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
+## Updating the CR
+At the moment, updating the CR is not supported (no change will happen) due to difficulties with detecting a password change. If you wish to update the CR, either delete and recreate it, or manually change its state to `Updating`.

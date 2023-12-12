@@ -11,10 +11,7 @@ require (
 	sigs.k8s.io/controller-runtime v0.14.1
 )
 
-require (
-	github.com/GehirnInc/crypt v0.0.0-20190301055215-6c0105aabd46 // indirect
-	golang.org/x/crypto v0.1.0 // indirect
-)
+require golang.org/x/crypto v0.1.0
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -22,7 +19,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.9.0 // indirect
 	github.com/evanphx/json-patch/v5 v5.6.0 // indirect
-	github.com/foomo/htpasswd v0.0.0-20200116085101-e3a90e78da9c
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/zapr v1.2.3 // indirect
