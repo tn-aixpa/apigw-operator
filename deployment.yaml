@@ -420,7 +420,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: albcar/apigw-operator:0.0.1
+        image: ghcr.io/scc-digitalhub/apigw-operator:latest
         livenessProbe:
           httpGet:
             path: /healthz
