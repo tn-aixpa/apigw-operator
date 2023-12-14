@@ -2,7 +2,7 @@
 # This file is used to track the info used to scaffold your project
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
-domain: digitalhub.it
+domain: scc-digitalhub.github.io
 layout:
 - go.kubebuilder.io/v4-alpha
 plugins:
@@ -15,7 +15,7 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: digitalhub.it
+  domain: scc-digitalhub.github.io
   group: operator
   kind: ApiGw
   path: github.com/scc-digitalhub/apigw-operator/api/v1

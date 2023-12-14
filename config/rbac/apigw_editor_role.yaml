@@ -12,7 +12,7 @@ metadata:
   name: apigw-editor-role
 rules:
 - apiGroups:
-  - operator.digitalhub.it
+  - operator.scc-digitalhub.github.io
   resources:
   - apigws
   verbs:
@@ -24,7 +24,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - operator.digitalhub.it
+  - operator.scc-digitalhub.github.io
   resources:
   - apigws/status
   verbs:

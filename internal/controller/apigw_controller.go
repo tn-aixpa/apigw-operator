@@ -59,8 +59,8 @@ func formatResourceName(resourceName string) string {
 	return strings.Join([]string{"apigw", resourceName}, "-")
 }
 
-//+kubebuilder:rbac:groups=operator.digitalhub.it,resources=apigws,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=operator.digitalhub.it,resources=apigws/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=operator.scc-digitalhub.github.io,resources=apigws,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=operator.scc-digitalhub.github.io,resources=apigws/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=networking,namespace=apigw-operator-system,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,namespace=apigw-operator-system,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 

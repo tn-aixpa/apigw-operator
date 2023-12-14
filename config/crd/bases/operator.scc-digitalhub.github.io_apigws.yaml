@@ -5,9 +5,9 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.11.1
   creationTimestamp: null
-  name: apigws.operator.digitalhub.it
+  name: apigws.operator.scc-digitalhub.github.io
 spec:
-  group: operator.digitalhub.it
+  group: operator.scc-digitalhub.github.io
   names:
     kind: ApiGw
     listKind: ApiGwList
@@ -35,24 +35,28 @@ spec:
           spec:
             description: ApiGwSpec defines the desired state of ApiGw
             properties:
-              hosts:
-                items:
-                  properties:
-                    host:
-                      type: string
-                    paths:
-                      items:
-                        properties:
-                          path:
-                            type: string
-                          port:
-                            type: integer
-                          service:
-                            type: string
-                        type: object
-                      type: array
-                  type: object
-                type: array
+              auth:
+                properties:
+                  basic:
+                    properties:
+                      password:
+                        type: string
+                      user:
+                        type: string
+                    type: object
+                  type:
+                    description: 'Valid types: none, basic'
+                    type: string
+                type: object
+              host:
+                type: string
+              path:
+                type: string
+              port:
+                format: int32
+                type: integer
+              service:
+                type: string
             type: object
           status:
             description: ApiGwStatus defines the observed state of ApiGw

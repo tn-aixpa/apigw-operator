@@ -1,4 +1,4 @@
-apiVersion: operator.digitalhub.it/v1
+apiVersion: operator.scc-digitalhub.github.io/v1
 kind: ApiGw
 metadata:
   name: apigw-sample

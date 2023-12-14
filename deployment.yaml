@@ -17,9 +17,9 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.11.1
   creationTimestamp: null
-  name: apigws.operator.digitalhub.it
+  name: apigws.operator.scc-digitalhub.github.io
 spec:
-  group: operator.digitalhub.it
+  group: operator.scc-digitalhub.github.io
   names:
     kind: ApiGw
     listKind: ApiGwList
@@ -179,7 +179,7 @@ metadata:
   name: apigw-operator-manager-role
 rules:
 - apiGroups:
-  - operator.digitalhub.it
+  - operator.scc-digitalhub.github.io
   resources:
   - apigws
   verbs:
@@ -191,7 +191,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - operator.digitalhub.it
+  - operator.scc-digitalhub.github.io
   resources:
   - apigws/status
   verbs:
