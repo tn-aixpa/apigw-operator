@@ -171,6 +171,43 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - watch
+  - create
+  - list
+  - delete
+- apiGroups:
+  - operator.scc-digitalhub.github.io
+  resources:
+  - apigws
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - operator.scc-digitalhub.github.io
+  resources:
+  - apigws/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - watch
+  - list
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -198,31 +235,6 @@ rules:
   - get
   - patch
   - update
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - ingresses
-  verbs:
-  - watch
-  - create
-  - list
-  - delete
-- apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
-  - watch
-  - create
-  - list
-  - delete
-- apiGroups:
-  - ""
-  resources:
-  - services
-  verbs:
-  - watch
-  - list
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -288,19 +300,20 @@ subjects:
   namespace: apigw-operator-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   labels:
     app.kubernetes.io/component: rbac
     app.kubernetes.io/created-by: apigw-operator
     app.kubernetes.io/instance: manager-rolebinding
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: clusterrolebinding
+    app.kubernetes.io/name: rolebinding
     app.kubernetes.io/part-of: apigw-operator
   name: apigw-operator-manager-rolebinding
+  namespace: apigw-operator-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: apigw-operator-manager-role
 subjects:
 - kind: ServiceAccount
@@ -420,6 +433,9 @@ spec:
         - --leader-elect
         command:
         - /manager
+        env:
+        - name: WATCH_NAMESPACE
+          value: apigw-operator-system
         image: ghcr.io/scc-digitalhub/apigw-operator:latest
         livenessProbe:
           httpGet:
