@@ -400,6 +400,10 @@ spec:
         env:
         - name: WATCH_NAMESPACE
           value: apigw-operator-system
+        - name: ENABLE_TLS
+          value: "true"
+        - name: TLS_SECRET_NAME
+          value: ingresssecret
         image: ghcr.io/scc-digitalhub/apigw-operator:latest
         livenessProbe:
           httpGet:

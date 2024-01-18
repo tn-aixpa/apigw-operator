@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
@@ -35,6 +36,8 @@ import (
 	operatorv1 "github.com/scc-digitalhub/apigw-operator/api/v1"
 )
 
+const envEnableTls = "ENABLE_TLS"
+const envTlsSecretName = "TLS_SECRET_NAME"
 const genericStatusUpdateFailedMessage = "failed to update ApiGw status"
 
 // Definitions to manage status conditions
@@ -365,6 +368,43 @@ func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1
 	pathTypePrefix := networkingv1.PathTypePrefix
 	nginx := "nginx"
 
+	ingressSpec := networkingv1.IngressSpec{
+		IngressClassName: &nginx,
+		Rules: []networkingv1.IngressRule{{
+			Host: apigw.Spec.Host,
+			IngressRuleValue: networkingv1.IngressRuleValue{
+				HTTP: &networkingv1.HTTPIngressRuleValue{
+					Paths: []networkingv1.HTTPIngressPath{{
+						PathType: &pathTypePrefix,
+						Path:     apigw.Spec.Path,
+						Backend: networkingv1.IngressBackend{
+							Service: &networkingv1.IngressServiceBackend{
+								Name: apigw.Spec.Service,
+								Port: networkingv1.ServiceBackendPort{
+									Number: int32(apigw.Spec.Port),
+								},
+							},
+						},
+					}},
+				},
+			},
+		}},
+	}
+
+	enableTls, found := os.LookupEnv(envEnableTls)
+	if found && strings.EqualFold(enableTls, "true") {
+		tls := networkingv1.IngressTLS{
+			Hosts: []string{apigw.Spec.Host},
+		}
+
+		tlsSecretName, found := os.LookupEnv(envTlsSecretName)
+		if found {
+			tls.SecretName = tlsSecretName
+		}
+
+		ingressSpec.TLS = []networkingv1.IngressTLS{tls}
+	}
+
 	ingress := &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      formatResourceName(apigw.Name),
@@ -375,28 +415,7 @@ func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1
 				"nginx.ingress.kubernetes.io/auth-secret": formatResourceName(apigw.Name),
 			},
 		},
-		Spec: networkingv1.IngressSpec{
-			IngressClassName: &nginx,
-			Rules: []networkingv1.IngressRule{{
-				Host: apigw.Spec.Host,
-				IngressRuleValue: networkingv1.IngressRuleValue{
-					HTTP: &networkingv1.HTTPIngressRuleValue{
-						Paths: []networkingv1.HTTPIngressPath{{
-							PathType: &pathTypePrefix,
-							Path:     apigw.Spec.Path,
-							Backend: networkingv1.IngressBackend{
-								Service: &networkingv1.IngressServiceBackend{
-									Name: apigw.Spec.Service,
-									Port: networkingv1.ServiceBackendPort{
-										Number: int32(apigw.Spec.Port),
-									},
-								},
-							},
-						}},
-					},
-				},
-			}},
-		},
+		Spec: ingressSpec,
 	}
 
 	// Set the ownerRef for the Ingress

@@ -75,6 +75,10 @@ spec:
         env:
         - name: WATCH_NAMESPACE
           value: "apigw-operator-system"
+        - name: ENABLE_TLS
+          value: "true"
+        - name: TLS_SECRET_NAME
+          value: ingsecret
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
