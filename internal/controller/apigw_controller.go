@@ -391,6 +391,7 @@ func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1
 		}},
 	}
 
+	// Add TLS to the spec, if enabled
 	enableTls, found := os.LookupEnv(envEnableTls)
 	if found && strings.EqualFold(enableTls, "true") {
 		tls := networkingv1.IngressTLS{
@@ -405,17 +406,23 @@ func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1
 		ingressSpec.TLS = []networkingv1.IngressTLS{tls}
 	}
 
+	objectMeta := metav1.ObjectMeta{
+		Name:      formatResourceName(apigw.Name),
+		Namespace: apigw.Namespace,
+		Labels:    labelsForApiGw(apigw.Name),
+	}
+
+	// Add auth annotations to metadata, if enabled
+	if apigw.Spec.Auth.Type != "" && apigw.Spec.Auth.Type != "none" {
+		objectMeta.Annotations = map[string]string{
+			"nginx.ingress.kubernetes.io/auth-type":   apigw.Spec.Auth.Type,
+			"nginx.ingress.kubernetes.io/auth-secret": formatResourceName(apigw.Name),
+		}
+	}
+
 	ingress := &networkingv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      formatResourceName(apigw.Name),
-			Namespace: apigw.Namespace,
-			Labels:    labelsForApiGw(apigw.Name),
-			Annotations: map[string]string{
-				"nginx.ingress.kubernetes.io/auth-type":   apigw.Spec.Auth.Type,
-				"nginx.ingress.kubernetes.io/auth-secret": formatResourceName(apigw.Name),
-			},
-		},
-		Spec: ingressSpec,
+		ObjectMeta: objectMeta,
+		Spec:       ingressSpec,
 	}
 
 	// Set the ownerRef for the Ingress
