@@ -404,6 +404,8 @@ spec:
           value: "true"
         - name: TLS_SECRET_NAME
           value: ingresssecret
+        - name: INGRESS_CLASS_NAME
+          value: nginx
         image: ghcr.io/scc-digitalhub/apigw-operator:latest
         livenessProbe:
           httpGet:

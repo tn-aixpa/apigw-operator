@@ -36,6 +36,7 @@ import (
 	operatorv1 "github.com/scc-digitalhub/apigw-operator/api/v1"
 )
 
+const envIngressClassName = "INGRESS_CLASS_NAME"
 const envEnableTls = "ENABLE_TLS"
 const envTlsSecretName = "TLS_SECRET_NAME"
 const genericStatusUpdateFailedMessage = "failed to update ApiGw status"
@@ -366,10 +367,13 @@ func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1
 	}
 
 	pathTypePrefix := networkingv1.PathTypePrefix
-	nginx := "nginx"
+	ingressClassName, found := os.LookupEnv(envIngressClassName)
+	if !found {
+		return nil, fmt.Errorf("ingress class name environment variable is not specified")
+	}
 
 	ingressSpec := networkingv1.IngressSpec{
-		IngressClassName: &nginx,
+		IngressClassName: &ingressClassName,
 		Rules: []networkingv1.IngressRule{{
 			Host: apigw.Spec.Host,
 			IngressRuleValue: networkingv1.IngressRuleValue{
@@ -413,7 +417,7 @@ func (r *ApiGwReconciler) ingressForApiGw(ctx context.Context, apigw *operatorv1
 	}
 
 	// Add auth annotations to metadata, if enabled
-	if apigw.Spec.Auth.Type != "" && apigw.Spec.Auth.Type != "none" {
+	if apigw.Spec.Auth.Type != "" && apigw.Spec.Auth.Type != "none" && ingressClassName == "nginx" {
 		objectMeta.Annotations = map[string]string{
 			"nginx.ingress.kubernetes.io/auth-type":   apigw.Spec.Auth.Type,
 			"nginx.ingress.kubernetes.io/auth-secret": formatResourceName(apigw.Name),
