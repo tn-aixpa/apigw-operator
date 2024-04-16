@@ -21,7 +21,7 @@ An example CR is found at `config/samples/operator_v1_apigw.yaml`. Apply it with
 kubectl apply -f config/samples/operator_v1_apigw.yaml
 ```
 
-## API Gateway custom resource
+## Custom Resources
 The custom resource's properties are:
 
 - `host`: **Required**. URL to host the access point on.
@@ -59,5 +59,28 @@ spec:
   port: 9080
 ```
 
-## Updating the CR
+## Updating a CR
 At the moment, updating the CR is not supported (no change will happen) due to difficulties with detecting a password change. If you wish to update the CR, either delete and recreate it, or manually change its state to `Updating`.
+
+## Commands for development
+This section is for convenience purposes and briefly recaps some commands used in operator development.
+
+**Generate yaml resource files** (run this after editing `*_types.go` files):
+```sh
+make generate
+```
+
+**Generate CRD manifests** (run this after editing `//+kubebuilder` annotations):
+```sh
+make manifests
+```
+
+**Run operator locally** outside the cluster, for testing purposes (`export` required envs first):
+```sh
+make install run
+```
+
+**Generate *deployment.yaml* file** (remember to configure `env` and `image` in the *Deployment* resource):
+```sh
+./bin/kustomize build config/default > deployment.yaml
+```
