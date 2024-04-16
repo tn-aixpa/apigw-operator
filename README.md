@@ -3,7 +3,15 @@
 A Kubernetes operator to launch ingresses for services.
 
 ## Installation
-There is an available deployment file ready to be used. Install operator and CRD:
+A number of environment variables must be configured. If you're using the `deployment.yaml` file, you will find them towards the end of the file.
+```
+WATCH_NAMESPACE: apigw-operator-system
+ENABLE_TLS: true
+TLS_SECRET_NAME: ingresssecret
+INGRESS_CLASS_NAME: nginx
+```
+
+Install operator and CRD:
 ```sh
 kubectl apply -f deployment.yaml
 ```
