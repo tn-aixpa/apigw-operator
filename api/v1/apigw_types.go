@@ -47,6 +47,7 @@ type BasicAuth struct {
 type ApiGwStatus struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	State string `json:"state,omitempty" patchStrategy:"merge"`
+	Hash  string `json:"hash,omitempty" patchStrategy:"merge"`
 }
 
 //+kubebuilder:object:root=true

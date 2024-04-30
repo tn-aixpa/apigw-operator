@@ -28,13 +28,23 @@ The custom resource's properties are:
 - `path`: **Required**. Path within the host to host the access point on.
 - `service`: **Required**. Name of the Kubernetes service.
 - `port`: **Required**. Internal port the service is listening on.
-- `auth`: *Optional*. A structure to configure authentication. If left empty, authentication is disabled. Has the following properties:
-  - `type`: `basic` or `none` (disabled).
+- `auth`: *Optional*. A structure to configure authentication. If left empty, authentication is disabled. Must be disabled if `INGRESS_CLASS_NAME` is not `nginx`, or resources will result in error. Has the following properties:
+  - `type`: `basic` or `none` (disabled). 
   - `basic`: Structure for basic authentication. Has the following properties:
     - `user`
     - `password`
 
 A valid sample spec configuration is:
+``` yaml
+...
+spec:
+  host: foo.bar.com
+  path: /
+  service: myservice
+  port: 9080
+```
+
+Another valid sample (requires `nginx` as `INGRESS_CLASS_NAME`):
 ``` yaml
 ...
 spec:
@@ -48,19 +58,6 @@ spec:
       user: user
       password: password
 ```
-
-Another valid sample:
-``` yaml
-...
-spec:
-  host: foo.bar.com
-  path: /
-  service: myservice
-  port: 9080
-```
-
-## Updating a CR
-At the moment, updating the CR is not supported (no change will happen) due to difficulties with detecting a password change. If you wish to update the CR, either delete and recreate it, or manually change its state to `Updating`.
 
 ## Commands for development
 This section is for convenience purposes and briefly recaps some commands used in operator development.
