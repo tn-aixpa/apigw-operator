@@ -150,9 +150,6 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			} else if err != nil {
 				log.Error(err, "Failed to check if secret already exists")
 				return ctrl.Result{}, err
-			} else {
-				log.Error(err, "Secret already exists")
-				return setErrorState(r, ctx, cr, err)
 			}
 		}
 
@@ -171,13 +168,13 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 				log.Error(err, "Failed to create new Ingress", "Ingress.Namespace", ingress.Namespace, "Ingress.Name", ingress.Name)
 				return ctrl.Result{}, err
 			}
+			log.Info("Ingress created successfully")
 		} else if err != nil {
 			log.Error(err, "Failed to check if ingress already exists")
 			// Return error for reconciliation to be re-trigged
 			return ctrl.Result{}, err
 		} else {
-			log.Error(err, "Ingress already exists")
-			return setErrorState(r, ctx, cr, err)
+			log.Info("Ingress already exists")
 		}
 
 		cr.Status.State = typeReady
@@ -186,20 +183,39 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 
-		log.Info("Ingress created successfully")
 		return ctrl.Result{}, nil
 	}
 
 	if cr.Status.State == typeReady {
 		log.Info("Ready")
 
-		// Get ingress
+		// Check secret only if auth is set
+		if cr.Spec.Auth.Type != "" && cr.Spec.Auth.Type != "none" {
+			// Get ingress class name
+			ingressClassName, found := os.LookupEnv(envIngressClassName)
+			if !found {
+				log.Error(err, ingressClassMissingMessage)
+				return setErrorState(r, ctx, cr, err)
+			}
+
+			// Check nginx is set
+			if ingressClassName != "nginx" {
+				log.Error(err, "Invalid configuration: auth is only supported with nginx ingress class name")
+				return setErrorState(r, ctx, cr, err)
+			}
+
+			secret := &corev1.Secret{}
+			err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(cr.Name), Namespace: cr.Namespace}, secret)
+			if err != nil {
+				return handleMissingResource(r, ctx, cr, err)
+			}
+		}
+
+		// Check ingress
 		ingress := &networkingv1.Ingress{}
 		err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(cr.Name), Namespace: cr.Namespace}, ingress)
-
-		if err != nil && apierrors.IsNotFound(err) {
-			log.Error(err, "Ingress not found")
-			return setErrorState(r, ctx, cr, err)
+		if err != nil {
+			return handleMissingResource(r, ctx, cr, err)
 		}
 
 		// Check if CR was updated
@@ -268,7 +284,7 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 				if err := r.Delete(ctx, secret); err != nil {
 					log.Error(err, "Failed to clean up secret")
 				}
-			} else if err != nil && !apierrors.IsNotFound(err) {
+			} else if !apierrors.IsNotFound(err) {
 				log.Error(err, "Failed to get secret")
 				return ctrl.Result{}, err
 			}
@@ -278,12 +294,7 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 		// Recreate secret if auth is set
 		if cr.Spec.Auth.Type != "" && cr.Spec.Auth.Type != "none" {
-
-			// Check nginx is set
-			if ingressClassName != "nginx" {
-				log.Error(err, "Invalid configuration: auth is only supported with nginx ingress class name")
-				return setErrorState(r, ctx, cr, err)
-			}
+			// No need to check if nginx is set, as it is already done in running state
 
 			// Create secret
 			secret, err := r.secretForApiGw(cr)
@@ -317,7 +328,7 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			if err := r.Delete(ctx, ingress); err != nil {
 				log.Error(err, "Failed to clean up ingress")
 			}
-		} else if err != nil && !apierrors.IsNotFound(err) {
+		} else if !apierrors.IsNotFound(err) {
 			log.Error(err, "Failed to get ingress")
 			return ctrl.Result{}, err
 		}
@@ -329,13 +340,30 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			if err := r.Delete(ctx, secret); err != nil {
 				log.Error(err, "Failed to clean up secret")
 			}
-		} else if err != nil && !apierrors.IsNotFound(err) {
+		} else if !apierrors.IsNotFound(err) {
 			log.Error(err, "Failed to get secret")
 			return ctrl.Result{}, err
 		}
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func handleMissingResource(r *ApiGwReconciler, ctx context.Context, cr *operatorv1.ApiGw, err error) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+
+	if apierrors.IsNotFound(err) {
+		cr.Status.State = typeInitializing
+		if err = r.Status().Update(ctx, cr); err != nil {
+			log.Error(err, genericStatusUpdateFailedMessage)
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	log.Error(err, "error while retrieving resource")
+	return ctrl.Result{}, err
 }
 
 /*
@@ -556,6 +584,7 @@ func labelsForApiGw(name string) map[string]string {
 func (r *ApiGwReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&operatorv1.ApiGw{}).
+		Owns(&corev1.Secret{}).
 		Owns(&networkingv1.Ingress{}).
 		Complete(r)
 }
