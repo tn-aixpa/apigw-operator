@@ -239,36 +239,6 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if cr.Status.State == typeUpdating {
 		log.Info("Updating")
 
-		ingress := &networkingv1.Ingress{}
-		err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(cr.Name), Namespace: cr.Namespace}, ingress)
-		if err != nil {
-			log.Error(err, "Failed to get ingress")
-			return ctrl.Result{}, err
-		}
-
-		// Update ingress
-		ingress.Spec.Rules[0].Host = cr.Spec.Host
-
-		rule := ingress.Spec.Rules[0]
-		rule.HTTP.Paths[0].Path = cr.Spec.Path
-
-		path := rule.HTTP.Paths[0]
-
-		path.Backend.Service.Name = cr.Spec.Service
-		path.Backend.Service.Port.Number = cr.Spec.Port
-
-		ingress.Spec.Rules[0].Host = cr.Spec.Host
-
-		ingress.ObjectMeta.Annotations = map[string]string{
-			"nginx.ingress.kubernetes.io/auth-type":   cr.Spec.Auth.Type,
-			"nginx.ingress.kubernetes.io/auth-secret": formatResourceName(cr.Name),
-		}
-
-		if err = r.Update(ctx, ingress); err != nil {
-			log.Error(err, "Failed to update ingress")
-			return ctrl.Result{}, err
-		}
-
 		// Get ingress class name
 		ingressClassName, found := os.LookupEnv(envIngressClassName)
 		if !found {
@@ -292,9 +262,31 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			cr.Status.Hash = ""
 		}
 
+		// Get ingress
+		ingress := &networkingv1.Ingress{}
+		err = r.Get(ctx, types.NamespacedName{Name: formatResourceName(cr.Name), Namespace: cr.Namespace}, ingress)
+		if err != nil {
+			log.Error(err, "Failed to get ingress")
+			return ctrl.Result{}, err
+		}
+
+		ingress.Spec.Rules[0].Host = cr.Spec.Host
+
+		rule := ingress.Spec.Rules[0]
+		rule.HTTP.Paths[0].Path = cr.Spec.Path
+
+		path := rule.HTTP.Paths[0]
+
+		path.Backend.Service.Name = cr.Spec.Service
+		path.Backend.Service.Port.Number = cr.Spec.Port
+
+		ingress.Spec.Rules[0].Host = cr.Spec.Host
+
+		ingress.ObjectMeta.Annotations = map[string]string{}
+
 		// Recreate secret if auth is set
 		if cr.Spec.Auth.Type != "" && cr.Spec.Auth.Type != "none" {
-			// No need to check if nginx is set, as it is already done in running state
+			// No need to make sure nginx is set, as this check is already done in Ready state
 
 			// Create secret
 			secret, err := r.secretForApiGw(cr)
@@ -308,8 +300,20 @@ func (r *ApiGwReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 				return ctrl.Result{}, err
 			}
 
+			// Set nginx annotations
+			ingress.ObjectMeta.Annotations = map[string]string{
+				"nginx.ingress.kubernetes.io/auth-type":   cr.Spec.Auth.Type,
+				"nginx.ingress.kubernetes.io/auth-secret": formatResourceName(cr.Name),
+			}
+
 			// Write username:password hash in CR state
 			cr.Status.Hash = hashed(cr.Spec.Auth.Basic.User + ":" + cr.Spec.Auth.Basic.Password)
+		}
+
+		// Update ingress
+		if err = r.Update(ctx, ingress); err != nil {
+			log.Error(err, "Failed to update ingress")
+			return ctrl.Result{}, err
 		}
 
 		// Update status
