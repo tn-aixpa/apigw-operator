@@ -1,7 +1,7 @@
 # API Gateway Operator
 
 
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/scc-digitalhub/apigw-operator/release.yaml?event=release) [![license](https://img.shields.io/badge/license-Apache%202.0-blue)](https://github.com/scc-digitalhub/apigw-operator/LICENSE) ![GitHub Release](https://img.shields.io/github/v/release/scc-digitalhub/apigw-operator)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/tn-aixpa/apigw-operator/release.yaml?event=release) [![license](https://img.shields.io/badge/license-Apache%202.0-blue)](https://github.com/tn-aixpa/apigw-operator/LICENSE) ![GitHub Release](https://img.shields.io/github/v/release/tn-aixpa/apigw-operator)
 ![Status](https://img.shields.io/badge/status-stable-gold)
 
 
